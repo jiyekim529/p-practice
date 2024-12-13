@@ -2,19 +2,7 @@ import cv2
 import numpy as np
 
 class ImageProcessor:
-    """Processes images for autonomous vehicle navigation using computer vision techniques."""
-
     def __init__(self, detect_value=30, r_weight=33, g_weight=33, b_weight=33, y_value=10):
-        """
-        Initializes the ImageProcessor with specific detection and weighting parameters.
-
-        Args:
-            detect_value (int): Threshold value for binary image thresholding.
-            r_weight (int): Weight for the red channel.
-            g_weight (int): Weight for the green channel.
-            b_weight (int): Weight for the blue channel.
-            y_value (int): Vertical offset for perspective transformation.
-        """
         total_weight      = r_weight + g_weight + b_weight
         self.detect_value = detect_value
         self.r_weight     = r_weight / total_weight  # Normalize red channel weight
@@ -23,29 +11,11 @@ class ImageProcessor:
         self.y_value      = y_value
 
     def weight_gray(self, image):
-        """
-        Converts a BGR image to a weighted grayscale image based on predefined channel weights.
-
-        Args:
-            image (numpy.ndarray): The input BGR image.
-
-        Returns:
-            numpy.ndarray: The resulting weighted grayscale image.
-        """
         return cv2.addWeighted(
             cv2.addWeighted(image[:, :, 2], self.r_weight, image[:, :, 1], self.g_weight, 0),
             1.0, image[:, :, 0], self.b_weight, 0)
 
     def process_frame(self, input_frame):
-        """
-        Processes an input frame by applying perspective transformation and thresholding.
-
-        Args:
-            input_frame (numpy.ndarray): The input BGR frame captured from the camera.
-
-        Returns:
-            numpy.ndarray: The binary frame after processing.
-        """
         pts_src = np.float32([
             [10, 70 + self.y_value],
             [310, 70 + self.y_value],
@@ -70,34 +40,14 @@ class ImageProcessor:
         return binary_frame
 
     def decide_direction(self, histogram, direction_threshold=264103, up_threshold=50000):
-        """
-        Determines the driving direction based on the total sum of the histogram.
-
-        Args:
-            histogram (numpy.ndarray): The sum of pixel values along the vertical axis.
-            direction_threshold (int): Threshold to decide direction.
-            up_threshold (int): Threshold to decide whether to move forward.
-
-        Returns:
-            str: The decided direction ("UP" or "RANDOM").
-        """
         total = np.sum(histogram)
         print("total:", total)
 
         if total > direction_threshold: return "UP"
-        else: return "RANDOM"
+        elif total > up_threshold: return "LEFT"
+        else: return "RIGHT"
 
     def detect_symbol(self, frame, cascade):
-        """
-        Detects symbols in a frame using a specified Cascade Classifier.
-
-        Args:
-            frame (numpy.ndarray): The input BGR frame.
-            cascade (cv2.CascadeClassifier): The trained Cascade Classifier for symbol detection.
-
-        Returns:
-            bool: True if any symbols are detected, False otherwise.
-        """
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         symbols    = cascade.detectMultiScale(
                         gray_frame,
@@ -108,3 +58,10 @@ class ImageProcessor:
         for (x, y, w, h) in symbols:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
         return len(symbols) > 0
+    
+    def detect_non_black(self, frame, threshold=0.2):
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        non_black_pixels = np.sum(gray_frame > self.detect_value)
+        total_pixels = gray_frame.size
+        non_black_ratio = non_black_pixels / total_pixels   
+        return non_black_ratio > threshold
