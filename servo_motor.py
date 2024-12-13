@@ -1,43 +1,45 @@
-import RPi.GPIO as GPIO
 import time
 
 class ServoMotor:
-    def __init__(self, pan_pin, tilt_pin, frequency=50):
-        self.pan_pin    = pan_pin
-        self.tilt_pin   = tilt_pin
-        self.frequency  = frequency
+    def __init__(self, cap):
+        self.cap = cap
+        self.servo_angle = 30 # 초기 앵글 각도
 
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(self.pan_pin, GPIO.OUT)
-        GPIO.setup(self.tilt_pin, GPIO.OUT)
+    def move_servo(self, car, angle):
+        self.servo_angle = angle
+        car.Ctrl_Servo(1, self.servo_angle)
+        car.Ctrl_Servo(2, self.servo_angle)
+        time.sleep(0.5)
 
-        self.pan_pwm  = GPIO.PWM(self.pan_pin, self.frequency)
-        self.tilt_pwm = GPIO.PWM(self.tilt_pin, self.frequency)
+    def rotate_and_detect(self, car, detection, cascades):
+        attempts     = 0
+        max_attempts = 5
 
-        self.pan_pwm.start(0)
-        self.tilt_pwm.start(0)
+        self.move_servo(car, 30) 
+        
+        angles = [15, 30, 45, 30] # 좌우로 움직일 각도
 
-        # 초기 각도 설정
-        self.set_pan_angle(90)
-        self.set_tilt_angle(90)
+        while attempts < max_attempts:
+            for angle in angles:
+                self.move_servo(car, angle)
+                ret, frame = self.cap.read()
+                if not ret: continue
 
-    def set_pan_angle(self, angle):
-        # 0도 ~ 180도 기준 -> 듀티비 변환
-        duty = self.angle_to_duty(angle)
-        self.pan_pwm.ChangeDutyCycle(duty)
-        time.sleep(0.3)  # 모터가 움직일 시간
-        self.pan_pwm.ChangeDutyCycle(0) # 서보 모터 떨림 감소를 위해 끔
+                # ImageProcessor 클래스에서 detection 결과를 받아옴
+                if detection.detect_symbol(frame, cascades['O_Total']): return 'O_Total'
+                elif detection.detect_symbol(frame, cascades['B_Total']):break
+                else:
+                    attempts += 1
+                    continue  # 내부 for 루프가 break 없이 완료되면 다음 시도
 
-    def set_tilt_angle(self, angle):
-        duty = self.angle_to_duty(angle)
-        self.tilt_pwm.ChangeDutyCycle(duty)
-        time.sleep(0.3)
-        self.tilt_pwm.ChangeDutyCycle(0)
+            # B_Total을 감지한 경우 고개를 들어 추가 탐색
+            self.move_servo(car, 60)  # 고개를 들어 위를 봄
+            time.sleep(1)
+            ret, frame = self.cap.read()
+            if not ret: continue
+            if detection.detect_symbol(frame, cascades['T_Total']): return "T_Total"
+            elif detection.detect_symbol(frame, cascades['0_Total']): return "0_Total"
 
-    def angle_to_duty(self, angle): # 보정 필요 
-        return 2 + (angle/180.0)*10
+            attempts += 1
 
-    def cleanup(self):
-        self.pan_pwm.stop()
-        self.tilt_pwm.stop()
-        GPIO.cleanup([self.pan_pin, self.tilt_pin])
+        return None
